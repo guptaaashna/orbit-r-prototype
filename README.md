@@ -1,16 +1,48 @@
-# React + Vite
+# ORBIT-R
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Operational Resilience & Backup Intelligence for Space Missions
 
-Currently, two official plugins are available:
+🚀 **[LIVE PROTOTYPE →](https://orbit-r-prototype.vercel.app)**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+ORBIT-R is a mission resilience and decision-support system designed to analyze how failures propagate across interconnected space-mission systems and determine how remaining resources can be reallocated to preserve critical mission operations.
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🚀 Problem
 
-## Expanding the ESLint configuration
+Space missions depend on interconnected components such as:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Satellites
+- Communication links
+- Ground stations
+- Mission tasks
+- Available resources
+
+A failure in one component can propagate through these dependencies, affecting multiple mission activities.
+
+Traditional monitoring systems can identify failures, but mission operators also need to understand:
+
+**What is affected? → How severe is the impact? → What can still be completed? → What is the best recovery strategy?**
+
+ORBIT-R addresses this decision-making gap.
+
+---
+
+## 💡 Our Solution
+
+ORBIT-R models the mission as an interconnected dependency network and provides an end-to-end resilience workflow:
+
+```text
+Mission State
+     ↓
+Failure Detection
+     ↓
+Dependency Propagation
+     ↓
+Impact Analysis
+     ↓
+Resource Assessment
+     ↓
+Recovery Optimization
+     ↓
+Resilient Mission Plan 
