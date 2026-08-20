@@ -1,21 +1,24 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Satellite, RadioTower, AlertTriangle, Activity, Zap, CheckCircle2,
-  XCircle, TrendingUp, Play, Gauge, ChevronRight, Download, X, Info,
-  Sparkles, RefreshCw, Target, Layers, Clock, ArrowRight, Star,
-  ShieldAlert, Radio, ListChecks, FileText, RotateCcw, TowerControl,
+  Satellite, AlertTriangle, Activity, Zap, CheckCircle2,
+  Gauge, Download, X, Info, Sparkles, RefreshCw, Target, Layers,
+  Clock, ArrowRight, Star, ShieldAlert, Radio, ListChecks, FileText,
+  RotateCcw, TowerControl, Play, Cpu, BatteryCharging, Server, Shield,
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Cell,
+  Tooltip, ResponsiveContainer, Cell, Legend,
 } from "recharts";
+import { SCENARIOS } from "./data/scenarioData";
 
 /* =========================================================================
    ORBIT-R — Operational Resilience & Backup Intelligence for Space Missions
-   Mission-control prototype. Single scenario: EO-MISSION-01 / C03 failure.
+   SIH 2026 Round 2 — 3 Core Capability Pillars:
+   1. FAILURE PROPAGATION ("How far will it spread?")
+   2. RECOVERY OPTIMIZATION ("What is the best plan?")
+   3. RECOVERY MEASUREMENT ("How much did we save?")
    ========================================================================= */
 
-/* ---------------------------- design tokens ---------------------------- */
 const C = {
   bg: "#050810",
   bgPanel: "rgba(13,20,34,0.72)",
@@ -40,7 +43,7 @@ const STATUS_STYLE = {
   recovered: { stroke: C.purple, fill: "rgba(177,140,255,0.12)", text: C.purple, glow: `0 0 14px rgba(177,140,255,0.35)` },
 };
 
-/* ------------------------------ scenario -------------------------------- */
+/* ---------------- GRAPH NODES GEOMETRY ---------------- */
 const SATELLITES = [
   { id: "SAT-01", x: 130 },
   { id: "SAT-02", x: 410 },
@@ -74,11 +77,6 @@ const TASKS = [
 ];
 
 const Y_SAT = 46, Y_LINK = 178, Y_GS = 312, Y_TASK = 452;
-const FAILED_LINK = "C03";
-const IMPACT_SAT = "SAT-02";
-const IMPACT_GS = "GS-01";
-const CRITICAL_TASKS = ["T07", "T11"];
-const AT_RISK_TASKS = ["T02", "T07", "T11", "T14", "T09", "T18"];
 
 const centerOf = (type, id) => {
   if (type === "sat") { const n = SATELLITES.find((s) => s.id === id); return { x: n.x, y: Y_SAT }; }
@@ -87,68 +85,14 @@ const centerOf = (type, id) => {
   if (type === "task") { const n = TASKS.find((s) => s.id === id); return { x: n.x, y: Y_TASK }; }
 };
 
-function isPostFailure(phase) { return ["failed", "plans", "executing", "stabilized"].includes(phase); }
-
-function satStatus(id, phase) {
-  if (id !== IMPACT_SAT || !isPostFailure(phase)) return "ok";
-  return phase === "stabilized" ? "recovered" : "warning";
-}
-function gsStatus(id, phase) {
-  if (id !== IMPACT_GS || !isPostFailure(phase)) return "ok";
-  return phase === "stabilized" ? "recovered" : "warning";
-}
-function linkStatus(id, phase) {
-  if (id !== FAILED_LINK || !isPostFailure(phase)) return "ok";
-  return "critical"; // stays failed forever, even after recovery
-}
-function taskStatus(id, phase) {
-  if (!isPostFailure(phase)) return "ok";
-  if (phase === "stabilized") return AT_RISK_TASKS.includes(id) ? "recovered" : "ok";
-  if (CRITICAL_TASKS.includes(id)) return "critical";
-  if (AT_RISK_TASKS.includes(id)) return "warning";
-  return "ok";
-}
 const SEV = { ok: 0, recovered: 1, warning: 2, critical: 3 };
 function combine(a, b) { return SEV[a] >= SEV[b] ? a : b; }
 
-/* ------------------------------- metrics --------------------------------- */
-const NOMINAL_M = { health: 100, sats: 4, gsCount: 3, links: 8, active: 24, critical: 10, resources: 91 };
-const FAILED_M = { health: 58, sats: 3, gsCount: 2, links: 7, active: 15, critical: 6, resources: 62 };
-const RECOVERED_M = { health: 94, sats: 4, gsCount: 3, links: 7, active: 22, critical: 10, resources: 78 };
-function metricsFor(phase) {
-  if (phase === "stabilized") return RECOVERED_M;
-  if (isPostFailure(phase)) return FAILED_M;
-  return NOMINAL_M;
-}
-
-const RESOURCE_ROWS = [
-  { key: "Bandwidth", value: 62 },
-  { key: "Computing", value: 71 },
-  { key: "Power", value: 84 },
-  { key: "Ground Capacity", value: 55 },
-  { key: "Satellite Capacity", value: 68 },
+const DEMO_STAGES = [
+  "NORMAL MISSION", "PREDICTIVE MONITORING", "FAILURE PREDICTION", "FAILURE CONFIRMED",
+  "PROPAGATION ANALYSIS", "IMPACT CALCULATED", "RESOURCE & BACKUP", "RECOVERY OPTIMIZATION",
+  "RECOVERY EXECUTION", "STABILIZED"
 ];
-const CRITICALITY_ROWS = [
-  { id: "SAT-02", score: 0.94 },
-  { id: "GS-01", score: 0.87 },
-  { id: "C03", score: 0.82 },
-  { id: "SAT-01", score: 0.61 },
-];
-const PLANS = [
-  { key: "A", name: "Communication Reroute", value: 91, critRecovered: "5/6", risk: "Low", cost: "Medium", time: "8 min", score: 91.4 },
-  { key: "B", name: "Task Reprioritization", value: 82, critRecovered: "4/6", risk: "Medium", cost: "Low", time: "5 min", score: 82.7 },
-  { key: "C", name: "Multi-Resource Reallocation", value: 94, critRecovered: "6/6", risk: "Low", cost: "High", time: "11 min", score: 94.2, best: true },
-];
-const EXEC_STEPS = [
-  "Rerouting communication",
-  "Reallocating bandwidth",
-  "Reassigning satellite capacity",
-  "Updating ground-station workload",
-  "Reprioritizing tasks",
-  "Validating dependencies",
-  "Verifying mission continuity",
-];
-const DEMO_LABELS = ["NOMINAL", "FAILURE", "PROPAGATION", "IMPACT", "RESOURCE ANALYSIS", "RECOVERY PLANS", "BEST PLAN", "EXECUTION", "STABILIZED"];
 
 /* ------------------------------- utilities -------------------------------- */
 function useCountUp(target, duration = 650) {
@@ -173,14 +117,18 @@ function useCountUp(target, duration = 650) {
 
 /* ================================ APP ==================================== */
 export default function App() {
-  const [phase, setPhase] = useState("nominal");
-  const [failureKind, setFailureKind] = useState("link");
+  const [scenarioId, setScenarioId] = useState("comm");
+  const [phase, setPhase] = useState("nominal"); // nominal | predictive | predicted | failed | plans | executing | stabilized
   const [demoMode, setDemoMode] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
   const [execIdx, setExecIdx] = useState(-1);
   const [toasts, setToasts] = useState([]);
   const [health, setHealth] = useState([{ t: "T-0", v: 100 }]);
+
+  const currentScenario = SCENARIOS.find((s) => s.id === scenarioId) || SCENARIOS[0];
+
   const timers = useRef([]);
+  const predRef = useRef(null);
   const graphRef = useRef(null);
   const optimizerRef = useRef(null);
   const execRef = useRef(null);
@@ -192,7 +140,7 @@ export default function App() {
   const push = useCallback((msg, kind = "info") => {
     const id = Math.random().toString(36).slice(2);
     setToasts((t) => [...t, { id, msg, kind }]);
-    const tm = setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
+    const tm = setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
     timers.current.push(tm);
   }, []);
 
@@ -201,46 +149,67 @@ export default function App() {
     timers.current.push(tm);
   };
 
-  /* --- handlers --- */
-  const openInjector = () => setPhase("injector");
-  const closeInjector = () => setPhase("nominal");
+  /* --- Scenario Switch Handler --- */
+  const handleSelectScenario = (id) => {
+    if (phase !== "nominal" && phase !== "predictive" && phase !== "predicted") {
+      resetAll();
+    }
+    setScenarioId(id);
+    const s = SCENARIOS.find((sc) => sc.id === id);
+    push(`Switched to ${s.name}`, "info");
+  };
+
+  /* --- Interactive Workflow Handlers --- */
+  const analyzeRisk = () => {
+    setPhase("predictive");
+    push(`Predictive Monitoring Active — Scanning ${currentScenario.targetComponent}`, "warning");
+    const tm = setTimeout(() => {
+      setPhase("predicted");
+      push(`HIGH RISK: ${currentScenario.predictive.probability}% Failure Probability predicted for ${currentScenario.targetId}`, "critical");
+    }, 1200);
+    timers.current.push(tm);
+    scrollTo(predRef);
+  };
 
   const injectFailure = () => {
     setPhase("failed");
-    setHealth((h) => [...h, { t: "FAILURE", v: 58 }]);
-    push("FAILURE DETECTED — C03 Communication Link", "critical");
-    timers.current.push(setTimeout(() => push("Cascade: SAT-02 / GS-01 dependency impact", "warning"), 900));
-    timers.current.push(setTimeout(() => push("6 mission tasks at risk — 2 critical", "warning"), 1900));
+    const failureHealthVal = Math.round(currentScenario.availability.during);
+    setHealth((h) => [...h, { t: "FAILURE", v: failureHealthVal }]);
+    push(`FAILURE CONFIRMED — ${currentScenario.targetComponent}`, "critical");
+    timers.current.push(setTimeout(() => push(currentScenario.impact.propagationNotice, "warning"), 900));
+    timers.current.push(setTimeout(() => push(`${currentScenario.impact.tasksAtRiskCount} tasks at risk — ${currentScenario.impact.criticalTasksAtRiskCount} critical`, "warning"), 1800));
     scrollTo(graphRef);
   };
 
   const generatePlans = () => {
     setPhase("plans");
-    push("3 recovery plans generated", "info");
+    push("3 recovery plans generated & scored by Decision Engine", "info");
     scrollTo(optimizerRef);
   };
 
   const executeBestPlan = () => {
     setPhase("executing");
     setExecIdx(0);
-    push("Executing Plan C — Multi-Resource Reallocation", "purple");
+    const bestPlan = currentScenario.plans.find((p) => p.best);
+    push(`Executing Plan ${bestPlan.key} — ${bestPlan.name}`, "purple");
     scrollTo(execRef);
-    EXEC_STEPS.forEach((_, i) => {
+    currentScenario.execSteps.forEach((_, i) => {
       const tm = setTimeout(() => {
         setExecIdx(i);
-        if (i === EXEC_STEPS.length - 1) {
+        if (i === currentScenario.execSteps.length - 1) {
           const tm2 = setTimeout(() => stabilize(), 750);
           timers.current.push(tm2);
         }
-      }, 520 * (i + 1));
+      }, 550 * (i + 1));
       timers.current.push(tm);
     });
   };
 
   const stabilize = () => {
     setPhase("stabilized");
-    setHealth((h) => [...h, { t: "RECOVERY", v: 94 }]);
-    push("MISSION STABILIZED — 94% mission value retained", "success");
+    const stableHealthVal = Math.round(currentScenario.availability.after);
+    setHealth((h) => [...h, { t: "RECOVERY", v: stableHealthVal }]);
+    push(`MISSION STABILIZED — ${currentScenario.availability.after}% Mission Availability restored`, "success");
     scrollTo(stableRef);
   };
 
@@ -262,54 +231,69 @@ export default function App() {
     setDemoMode(true);
     setDemoStep(0);
     const at = (ms, fn) => timers.current.push(setTimeout(fn, ms));
-    at(900, () => { setDemoStep(1); openInjector(); });
-    at(2400, () => injectFailure());
-    at(3600, () => setDemoStep(2));
-    at(5200, () => setDemoStep(3));
-    at(6800, () => setDemoStep(4));
-    at(8400, () => { setDemoStep(5); generatePlans(); });
-    at(9800, () => setDemoStep(6));
-    at(11400, () => { setDemoStep(7); executeBestPlan(); });
-    at(11400 + 520 * EXEC_STEPS.length + 1300, () => setDemoStep(8));
+    at(800, () => { setDemoStep(1); analyzeRisk(); });
+    at(2500, () => { setDemoStep(2); });
+    at(4000, () => { setDemoStep(3); injectFailure(); });
+    at(5500, () => { setDemoStep(4); });
+    at(7000, () => { setDemoStep(5); });
+    at(8500, () => { setDemoStep(6); });
+    at(10000, () => { setDemoStep(7); generatePlans(); });
+    at(11800, () => { setDemoStep(8); executeBestPlan(); });
+    at(11800 + 550 * currentScenario.execSteps.length + 1200, () => { setDemoStep(9); });
   };
 
   const exportReport = () => {
-    const body = `ORBIT-R MISSION REPORT
-Mission: EO-MISSION-01
+    const s = currentScenario;
+    const bestPlan = s.plans.find((p) => p.best);
+    const body = `ORBIT-R MISSION RESILIENCE REPORT
+==================================================
+Mission: EO-MISSION-01 | SIH 2026 Round 2 Evaluation
 Generated: ${new Date().toLocaleString()}
+Selected Scenario: ${s.name}
+Target Component: ${s.targetComponent}
 
-Failure: C03 Communication Link
-Propagation: 7 affected components (2 direct, 5 indirect)
-Mission Tasks at Risk: 6
-Critical Tasks at Risk: 2
+1. PREDICTIVE TELEMETRY:
+- Failure Probability: ${s.predictive.probability}%
+- Prediction Confidence: ${s.predictive.confidence}%
+- Estimated Failure Window: ${s.predictive.window}
+- Anomaly Score: ${s.predictive.anomalyScore}
+- Risk Level: ${s.predictive.riskLevel}
 
-Selected Plan: Multi-Resource Reallocation (Plan C)
-Recovery Score: 94.2
-Mission Value Retained: 94%
-Critical Tasks Recovered: 6/6
-Recovery Time: 11 min
+2. PILLAR 1 — FAILURE PROPAGATION:
+- Failed Component: ${s.impact.failedNode}
+- Directly Affected Components: ${s.impact.directImpactCount}
+- Indirectly Affected Components: ${s.impact.indirectImpactCount}
+- Mission Tasks at Risk: ${s.impact.tasksAtRiskCount} (Critical: ${s.impact.criticalTasksAtRiskCount})
+- Mission Value at Risk: ${s.impact.missionValueAtRisk}%
 
-Mission Health: 100% -> 58% -> 94%
-Active Tasks: 24 -> 15 -> 22
-Critical Tasks: 10 -> 6 -> 10
-Resource Availability: 91% -> 62% -> 78%
+3. PILLAR 2 — RECOVERY OPTIMIZATION:
+- Selected Plan: Plan ${bestPlan.key} — ${bestPlan.name}
+- Optimization Score: ${bestPlan.score}
+- Mission Value Retained: ${bestPlan.value}%
+- Recovery Time: ${s.recoveryTime.total} min
+- Primary → Backup Pair: ${s.backup.primary} → ${s.backup.backup}
+- Backup Readiness: ${s.backup.readiness}% | Success Rate: ${s.backup.successRate}%
 
-Outcome: Mission Stabilized
-Note: C03 remains failed. Recovery was achieved through surviving
-resources and alternate routing, not component repair.
+4. PILLAR 3 — RECOVERY MEASUREMENT:
+- Mission Availability: Before ${s.availability.before}% | During ${s.availability.during}% | After ${s.availability.after}% (Delta: +${s.availability.recoveredDelta}%)
+- Data Loss: ${s.dataIntegrity.lossPercentage}% (${s.dataIntegrity.lostGB} GB / ${s.dataIntegrity.generatedGB} GB)
+- Failure Detection Accuracy: ${s.metrics.detectionAccuracy}% | Prediction Accuracy: ${s.metrics.predictionAccuracy}% | False Alarm Rate: ${s.metrics.falseAlarmRate}%
 
--- ORBIT-R Optimization / Decision Engine --
+Status: MISSION STABILIZED
+Note: Target component remains failed. Recovery achieved through surviving resources,
+failover, and decision optimization. Prototype simulation data.
+-- ORBIT-R Resilience Engine --
 `;
     const blob = new Blob([body], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "orbitr_mission_report.txt"; a.click();
+    a.href = url; a.download = `orbitr_${s.id}_mission_report.txt`; a.click();
     URL.revokeObjectURL(url);
     push("Mission report exported", "info");
   };
 
-  const m = metricsFor(phase);
-  const showPostFailure = isPostFailure(phase);
+  const isPostFailure = ["failed", "plans", "executing", "stabilized"].includes(phase);
+  const showPredictive = ["predictive", "predicted", "failed", "plans", "executing", "stabilized"].includes(phase);
   const showOptimizer = ["plans", "executing", "stabilized"].includes(phase);
   const showExec = ["executing", "stabilized"].includes(phase);
   const showStable = phase === "stabilized";
@@ -319,51 +303,70 @@ resources and alternate routing, not component repair.
       <BackgroundGrid />
       <ToastStack toasts={toasts} />
       <TopBar
+        scenarioId={scenarioId} setScenarioId={handleSelectScenario}
         phase={phase} demoMode={demoMode} demoStep={demoStep}
         onRunDemo={runDemo} onReset={resetAll}
       />
 
       <main className="max-w-[1280px] mx-auto px-4 sm:px-6 pb-28 pt-6 space-y-7 relative z-10">
-        <MissionControl metrics={m} phase={phase} onSimulate={openInjector} />
+        <StorylineStepper phase={phase} demoStep={demoStep} demoMode={demoMode} />
 
-        <div ref={graphRef}>
-          <DependencyGraphPanel phase={phase} />
+        {/* SECTION 1: MISSION CONTROL OVERVIEW */}
+        <MissionControl
+          scenario={currentScenario} phase={phase}
+          onAnalyzeRisk={analyzeRisk} onInjectFailure={injectFailure}
+        />
+
+        {/* SECTION 2: PREDICTIVE HEALTH MONITORING */}
+        <div ref={predRef}>
+          {showPredictive && <PredictiveHealthMonitoring scenario={currentScenario} phase={phase} />}
         </div>
 
-        {showPostFailure && (
-          <div className="grid lg:grid-cols-3 gap-5">
-            <PropagationPanel phase={phase} health={health} />
-            <CriticalityPanel />
-            <ResourcePanel />
-          </div>
+        {/* SECTION 3 & 4: PILLAR 1 — FAILURE PROPAGATION */}
+        <div ref={graphRef}>
+          <DependencyGraphPanel scenario={currentScenario} phase={phase} />
+        </div>
+
+        {/* SECTION 5: IMPACT ANALYSIS & RESOURCE/BACKUP */}
+        {isPostFailure && (
+          <>
+            <ImpactAnalysisPanel scenario={currentScenario} phase={phase} health={health} />
+
+            {/* SECTION 6: PILLAR 2 — RESOURCE & BACKUP ANALYSIS */}
+            <div className="grid lg:grid-cols-2 gap-5">
+              <ResourceUtilizationPanel scenario={currentScenario} />
+              <BackupRedundancyPanel scenario={currentScenario} />
+            </div>
+          </>
         )}
 
+        {/* SECTION 7: PILLAR 2 — RECOVERY OPTIMIZER */}
         <div ref={optimizerRef}>
-          {isPostFailure(phase) && (
-            <RecoveryOptimizer phase={phase} onGenerate={generatePlans} onExecute={executeBestPlan} />
+          {isPostFailure && (
+            <RecoveryOptimizer scenario={currentScenario} phase={phase} onGenerate={generatePlans} onExecute={executeBestPlan} />
           )}
         </div>
 
+        {/* SECTION 8: EXECUTION TIMELINE & RECOVERY TIME */}
         <div ref={execRef}>
-          {showExec && <ExecutionTimeline execIdx={execIdx} phase={phase} />}
+          {showExec && <TimelineAndRecoveryTimePanel scenario={currentScenario} execIdx={execIdx} phase={phase} />}
         </div>
 
+        {/* SECTION 9: PILLAR 3 — RECOVERY MEASUREMENT & OUTCOME */}
         <div ref={stableRef}>
           {showStable && (
             <>
-              <StabilizedBanner />
-              <ComparisonTable phase={phase} />
-              <MissionReportPanel onExport={exportReport} />
+              <MissionOutcomeSummary scenario={currentScenario} />
+              <div className="grid lg:grid-cols-2 gap-5">
+                <DataIntegrityAvailabilityPanel scenario={currentScenario} />
+                <DetectionMetricsPanel scenario={currentScenario} />
+              </div>
+              <ScenarioComparisonPanel currentId={scenarioId} />
+              <MissionReportPanel scenario={currentScenario} onExport={exportReport} />
             </>
           )}
         </div>
       </main>
-
-      <FailureInjector
-        open={phase === "injector"}
-        kind={failureKind} setKind={setFailureKind}
-        onInject={injectFailure} onClose={closeInjector}
-      />
 
       <style>{`
         @keyframes dashflow { to { stroke-dashoffset: -24; } }
@@ -371,8 +374,6 @@ resources and alternate routing, not component repair.
         @keyframes fadeSlideUp { from { opacity:0; transform: translateY(14px);} to {opacity:1; transform: translateY(0);} }
         @keyframes pulseGlow { 0%,100% { filter: drop-shadow(0 0 2px currentColor);} 50% { filter: drop-shadow(0 0 9px currentColor);} }
         @keyframes toastIn { from { opacity:0; transform: translateX(24px);} to {opacity:1; transform: translateX(0);} }
-        @keyframes scan { 0% { transform: translateY(-100%);} 100% { transform: translateY(100%);} }
-        @keyframes countPulse { 0% { transform: scale(1);} 40% { transform: scale(1.06);} 100% { transform: scale(1);} }
         .fade-in { animation: fadeSlideUp .5s ease both; }
         .edge-live { stroke-dasharray: 6 6; animation: dashflow 1s linear infinite; }
         .node-pulse { animation: pulseGlow 1.6s ease-in-out infinite; }
@@ -382,7 +383,7 @@ resources and alternate routing, not component repair.
   );
 }
 
-/* ============================ shared bits ================================ */
+/* ============================ SHARED COMPONENTS ============================ */
 
 function BackgroundGrid() {
   return (
@@ -401,7 +402,7 @@ function BackgroundGrid() {
 }
 
 function StatusDot({ status }) {
-  const s = STATUS_STYLE[status];
+  const s = STATUS_STYLE[status] || STATUS_STYLE.ok;
   return <span className="inline-block w-2 h-2 rounded-full" style={{ background: s.stroke, boxShadow: s.glow }} />;
 }
 
@@ -432,7 +433,9 @@ function SectionLabel({ eyebrow, title, right }) {
   return (
     <div className="flex items-end justify-between flex-wrap gap-3 mb-4">
       <div>
-        <div className="text-xs tracking-[0.2em] font-mono mb-1" style={{ color: C.cyan }}>{eyebrow}</div>
+        <div className="text-xs tracking-[0.2em] font-mono mb-1 flex items-center gap-2" style={{ color: C.cyan }}>
+          {eyebrow}
+        </div>
         <h2 className="text-lg sm:text-xl font-semibold tracking-tight" style={{ color: C.textHi }}>{title}</h2>
       </div>
       {right}
@@ -449,19 +452,19 @@ function Panel({ children, className = "", style = {} }) {
   );
 }
 
-/* ================================ top bar ================================= */
+/* ================================ TOP BAR ================================= */
 
-function TopBar({ phase, demoMode, demoStep, onRunDemo, onReset }) {
+function TopBar({ scenarioId, setScenarioId, phase, demoMode, demoStep, onRunDemo, onReset }) {
   const phaseLabel = {
-    nominal: "NOMINAL", injector: "FAILURE INJECTION", failed: "FAILURE DETECTED",
-    plans: "OPTIMIZING RECOVERY", executing: "EXECUTING RECOVERY", stabilized: "MISSION STABILIZED",
+    nominal: "NOMINAL MISSION", predictive: "PREDICTIVE MONITORING", predicted: "FAILURE PREDICTED",
+    failed: "FAILURE DETECTED", plans: "OPTIMIZING RECOVERY", executing: "EXECUTING RECOVERY", stabilized: "MISSION STABILIZED",
   }[phase];
   const phaseColor = {
-    nominal: C.cyan, injector: C.amber, failed: C.red, plans: C.purple, executing: C.purple, stabilized: C.green,
+    nominal: C.cyan, predictive: C.amber, predicted: C.amber, failed: C.red, plans: C.purple, executing: C.purple, stabilized: C.green,
   }[phase];
 
   return (
-    <header className="sticky top-0 z-40 backdrop-blur-md" style={{ background: "rgba(5,8,16,0.82)", borderBottom: `1px solid ${C.hairline}` }}>
+    <header className="sticky top-0 z-40 backdrop-blur-md" style={{ background: "rgba(5,8,16,0.85)", borderBottom: `1px solid ${C.hairline}` }}>
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg grid place-items-center" style={{ border: `1px solid ${C.cyanDim}`, background: "rgba(57,199,240,0.08)" }}>
@@ -469,29 +472,46 @@ function TopBar({ phase, demoMode, demoStep, onRunDemo, onReset }) {
           </div>
           <div>
             <div className="text-sm font-bold tracking-wide leading-none" style={{ color: C.textHi }}>ORBIT-R</div>
-            <div className="text-[11px] font-mono leading-none mt-1" style={{ color: C.textLo }}>EO-MISSION-01 · SIH26_70</div>
+            <div className="text-[11px] font-mono leading-none mt-1" style={{ color: C.textLo }}>Operational Resilience Engine · SIH 2026</div>
           </div>
-          <div className="hidden sm:flex items-center gap-2 ml-4 pl-4" style={{ borderLeft: `1px solid ${C.hairline}` }}>
-            <span className="w-1.5 h-1.5 rounded-full node-pulse" style={{ background: phaseColor, color: phaseColor }} />
-            <span className="text-xs font-mono tracking-wider" style={{ color: phaseColor }}>{phaseLabel}</span>
+          <div className="hidden lg:flex items-center gap-2 ml-4 pl-4" style={{ borderLeft: `1px solid ${C.hairline}` }}>
+            <span className="w-2 h-2 rounded-full node-pulse" style={{ background: phaseColor, color: phaseColor }} />
+            <span className="text-xs font-mono tracking-wider font-semibold" style={{ color: phaseColor }}>{phaseLabel}</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {demoMode && (
-            <div className="hidden md:flex items-center gap-2 text-[11px] font-mono px-3 py-1.5 rounded-full" style={{ border: `1px solid ${C.cyanDim}`, color: C.cyan }}>
-              STEP {demoStep + 1}/9 — {DEMO_LABELS[demoStep]}
-            </div>
-          )}
+        {/* Scenario Switcher Dropdown */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 rounded-xl p-1" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${C.hairline}` }}>
+            {SCENARIOS.map((sc) => {
+              const active = sc.id === scenarioId;
+              return (
+                <button
+                  key={sc.id}
+                  onClick={() => setScenarioId(sc.id)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5"
+                  style={{
+                    background: active ? "rgba(57,199,240,0.14)" : "transparent",
+                    color: active ? C.cyan : C.textMid,
+                    border: `1px solid ${active ? C.cyanDim : "transparent"}`,
+                  }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: active ? C.cyan : C.textLo }} />
+                  {sc.shortName}
+                </button>
+              );
+            })}
+          </div>
+
           {phase !== "nominal" && (
             <button onClick={onReset} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg transition hover:opacity-80"
               style={{ border: `1px solid ${C.hairline}`, color: C.textMid }}>
-              <RotateCcw size={13} /> Reset
+              <RotateCcw size={13} /> Reset Mission
             </button>
           )}
           <button onClick={onRunDemo} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg transition hover:brightness-110"
             style={{ background: `linear-gradient(135deg, ${C.cyan}, ${C.blue})`, color: "#04121C" }}>
-            <Play size={13} fill="#04121C" /> Run Live Demo
+            <Play size={13} fill="#04121C" /> Run Scenario Demo
           </button>
         </div>
       </div>
@@ -499,7 +519,50 @@ function TopBar({ phase, demoMode, demoStep, onRunDemo, onReset }) {
   );
 }
 
-/* ============================ mission control ============================= */
+/* ========================== STORYLINE STEPPER ============================ */
+
+function StorylineStepper({ phase, demoStep, demoMode }) {
+  const getActiveIdx = () => {
+    if (demoMode) return demoStep;
+    if (phase === "nominal") return 0;
+    if (phase === "predictive") return 1;
+    if (phase === "predicted") return 2;
+    if (phase === "failed") return 4;
+    if (phase === "plans") return 7;
+    if (phase === "executing") return 8;
+    if (phase === "stabilized") return 9;
+    return 0;
+  };
+  const activeIdx = getActiveIdx();
+
+  return (
+    <Panel className="py-3 px-4">
+      <div className="flex items-center justify-between text-[10px] font-mono tracking-wider mb-2" style={{ color: C.textLo }}>
+        <span>NARRATIVE WORKFLOW: PREDICT → FAILURE → PROPAGATE → OPTIMIZE → RECOVER → MEASURE</span>
+        <span style={{ color: C.cyan }}>STAGE {activeIdx + 1}/10: {DEMO_STAGES[activeIdx]}</span>
+      </div>
+      <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5">
+        {DEMO_STAGES.map((st, i) => {
+          const done = i < activeIdx;
+          const current = i === activeIdx;
+          return (
+            <div key={st} className="flex flex-col gap-1">
+              <div className="h-1.5 rounded-full transition-all duration-500" style={{
+                background: current ? C.cyan : done ? C.green : "rgba(255,255,255,0.06)",
+                boxShadow: current ? `0 0 10px ${C.cyan}` : "none",
+              }} />
+              <div className="text-[9px] font-mono truncate" style={{ color: current ? C.cyan : done ? C.textMid : C.textLo }}>
+                {st.split(" ")[0]}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
+/* ============================ MISSION CONTROL ============================= */
 
 function StatCard({ icon: Icon, label, value, suffix = "", color = C.cyan, sub }) {
   const disp = useCountUp(typeof value === "number" ? value : 0);
@@ -517,99 +580,114 @@ function StatCard({ icon: Icon, label, value, suffix = "", color = C.cyan, sub }
   );
 }
 
-function MissionControl({ metrics, phase, onSimulate }) {
-  const healthColor = metrics.health >= 90 ? C.green : metrics.health >= 70 ? C.cyan : metrics.health >= 50 ? C.amber : C.red;
+function MissionControl({ scenario, phase, onAnalyzeRisk, onInjectFailure }) {
+  const isPost = ["failed", "plans", "executing", "stabilized"].includes(phase);
+  const healthVal = phase === "stabilized" ? scenario.availability.after : isPost ? scenario.availability.during : 100;
+  const healthColor = healthVal >= 90 ? C.green : healthVal >= 70 ? C.cyan : healthVal >= 50 ? C.amber : C.red;
+
+  const resourceVal = phase === "stabilized" ? scenario.resources.after.overall : isPost ? scenario.resources.during.overall : scenario.resources.before.overall;
+
   return (
     <Panel className="fade-in">
       <SectionLabel
-        eyebrow="MISSION CONTROL"
-        title="ORBIT-R · Earth Observation Mission"
+        eyebrow="1. MISSION STATUS OVERVIEW"
+        title={`ORBIT-R Control · Active: ${scenario.name}`}
         right={
-          <button
-            onClick={onSimulate}
-            disabled={phase !== "nominal"}
-            className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110"
-            style={{ background: `linear-gradient(135deg, ${C.red}, #C22C3B)`, color: "#fff", boxShadow: phase === "nominal" ? `0 0 22px rgba(241,76,90,0.35)` : "none" }}
-          >
-            <AlertTriangle size={16} /> Simulate Failure
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onAnalyzeRisk}
+              disabled={phase !== "nominal"}
+              className="flex items-center gap-2 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110"
+              style={{ background: `linear-gradient(135deg, ${C.amber}, #D98822)`, color: "#0c0802" }}
+            >
+              <Activity size={15} /> Analyze Risk
+            </button>
+            <button
+              onClick={onInjectFailure}
+              disabled={phase !== "nominal" && phase !== "predictive" && phase !== "predicted"}
+              className="flex items-center gap-2 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110"
+              style={{ background: `linear-gradient(135deg, ${C.red}, #C22C3B)`, color: "#fff", boxShadow: phase === "predicted" ? `0 0 22px rgba(241,76,90,0.4)` : "none" }}
+            >
+              <AlertTriangle size={15} /> Inject Failure
+            </button>
+          </div>
         }
       />
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-        <StatCard icon={Activity} label="Mission Health" value={metrics.health} suffix="%" color={healthColor} />
-        <StatCard icon={ListChecks} label="Active Tasks" value={metrics.active} suffix={`/24`} color={C.textHi} />
-        <StatCard icon={Satellite} label="Satellites" value={metrics.sats} suffix="/4" color={C.textHi} />
-        <StatCard icon={TowerControl} label="Ground Stations" value={metrics.gsCount} suffix="/3" color={C.textHi} />
-        <StatCard icon={Radio} label="Comm Links" value={metrics.links} suffix="/8" color={C.textHi} />
-        <StatCard icon={Gauge} label="Resource Avail." value={metrics.resources} suffix="%" color={C.textHi} />
-        <StatCard icon={ShieldAlert} label="Critical Tasks" value={metrics.critical} suffix="" color={C.textHi} />
+        <StatCard icon={Activity} label="Mission Health" value={healthVal} suffix="%" color={healthColor} />
+        <StatCard icon={ListChecks} label="Active Tasks" value={isPost && phase !== "stabilized" ? 24 - scenario.impact.tasksAtRiskCount : 24} suffix={`/24`} color={C.textHi} />
+        <StatCard icon={Satellite} label="Satellites" value={scenario.type === "Compute" && isPost ? 3 : 4} suffix="/4" color={C.textHi} />
+        <StatCard icon={TowerControl} label="Ground Stations" value={scenario.type === "Communication" && isPost ? 2 : 3} suffix="/3" color={C.textHi} />
+        <StatCard icon={Radio} label="Comm Links" value={scenario.type === "Communication" && isPost ? 7 : 8} suffix="/8" color={C.textHi} />
+        <StatCard icon={Gauge} label="Resource Avail." value={resourceVal} suffix="%" color={C.textHi} />
+        <StatCard icon={ShieldAlert} label="Critical Tasks" value={isPost && phase !== "stabilized" ? 10 - scenario.impact.criticalTasksAtRiskCount : 10} suffix="" color={C.textHi} />
         <StatCard icon={Target} label="Mission State" value={
-          phase === "nominal" ? "NOMINAL" : phase === "stabilized" ? "STABLE" : phase === "injector" ? "STANDBY" : "DEGRADED"
+          phase === "nominal" ? "NOMINAL" : phase === "stabilized" ? "STABLE" : phase === "predictive" || phase === "predicted" ? "MONITORING" : "DEGRADED"
         } color={phase === "stabilized" ? C.green : phase === "nominal" ? C.cyan : C.amber} />
       </div>
     </Panel>
   );
 }
 
-/* ============================ failure injector ============================ */
+/* ===================== PREDICTIVE HEALTH MONITORING ======================= */
 
-function FailureInjector({ open, kind, setKind, onInject, onClose }) {
-  if (!open) return null;
-  const options = [
-    { id: "sat", label: "Satellite Failure", icon: Satellite },
-    { id: "link", label: "Communication-Link Failure", icon: Radio },
-    { id: "gs", label: "Ground-Station Failure", icon: TowerControl },
-    { id: "resource", label: "Resource Degradation", icon: Gauge },
-  ];
+function PredictiveHealthMonitoring({ scenario, phase }) {
+  const p = scenario.predictive;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(2,4,9,0.72)", backdropFilter: "blur(4px)" }}>
-      <div className="w-full max-w-lg rounded-2xl p-6 fade-in relative" style={{ background: C.bgPanelSolid, border: `1px solid ${C.hairline}`, boxShadow: "0 24px 64px rgba(0,0,0,0.55)" }}>
-        <button onClick={onClose} className="absolute top-4 right-4 opacity-60 hover:opacity-100"><X size={18} color={C.textMid} /></button>
-        <div className="flex items-center gap-2 mb-1">
-          <AlertTriangle size={18} color={C.amber} />
-          <div className="text-xs font-mono tracking-widest" style={{ color: C.amber }}>FAILURE INJECTION SIMULATOR</div>
+    <Panel className="fade-in" style={{ border: `1px solid ${C.amber}44`, background: "rgba(240,169,62,0.04)" }}>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <Activity size={16} color={C.amber} />
+          <span className="text-xs font-mono tracking-widest font-semibold" style={{ color: C.amber }}>2. PREDICTIVE HEALTH MONITORING</span>
         </div>
-        <h3 className="text-lg font-semibold mb-4" style={{ color: C.textHi }}>Choose a scenario</h3>
-
-        <div className="grid grid-cols-2 gap-2 mb-5">
-          {options.map((o) => {
-            const active = kind === o.id;
-            return (
-              <button key={o.id} onClick={() => setKind(o.id)}
-                className="flex items-center gap-2 text-left text-xs font-medium px-3 py-2.5 rounded-lg transition"
-                style={{
-                  border: `1px solid ${active ? C.cyanDim : C.hairline}`,
-                  background: active ? "rgba(57,199,240,0.08)" : "transparent",
-                  color: active ? C.cyan : C.textMid,
-                }}>
-                <o.icon size={14} /> {o.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="rounded-xl p-4 mb-5" style={{ background: "rgba(241,76,90,0.07)", border: `1px solid rgba(241,76,90,0.3)` }}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-mono tracking-wider" style={{ color: C.textLo }}>DEFAULT DEMO SCENARIO</span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full" style={{ background: C.red, color: "#fff" }}>CRITICAL</span>
-          </div>
-          <div className="text-base font-semibold" style={{ color: C.textHi }}>Communication Link C03 Failure</div>
-          <div className="text-xs mt-1" style={{ color: C.textMid }}>SAT-02 ↔ GS-01 primary downlink. Selected as the jury demo path — full injector supports all four failure modes in the production build.</div>
-        </div>
-
-        <button onClick={onInject} className="w-full flex items-center justify-center gap-2 text-sm font-bold py-3 rounded-xl transition hover:brightness-110"
-          style={{ background: `linear-gradient(135deg, ${C.red}, #C22C3B)`, color: "#fff" }}>
-          <Zap size={16} /> Inject Failure
-        </button>
+        <span className="text-[10px] font-mono px-2.5 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.06)", border: `1px solid ${C.hairline}`, color: C.textMid }}>
+          PROTOTYPE SIMULATION DATA
+        </span>
       </div>
-    </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+        <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-[10px] font-mono uppercase" style={{ color: C.textLo }}>Failure Probability</div>
+          <div className="text-2xl font-bold font-mono" style={{ color: C.amber }}>{p.probability}%</div>
+          <div className="text-[10px] font-mono" style={{ color: C.textLo }}>Risk Threshold: &gt;75%</div>
+        </div>
+        <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-[10px] font-mono uppercase" style={{ color: C.textLo }}>Prediction Confidence</div>
+          <div className="text-2xl font-bold font-mono" style={{ color: C.cyan }}>{p.confidence}%</div>
+          <div className="text-[10px] font-mono" style={{ color: C.textLo }}>ML Telemetry Confidence</div>
+        </div>
+        <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-[10px] font-mono uppercase" style={{ color: C.textLo }}>Est. Failure Window</div>
+          <div className="text-2xl font-bold font-mono" style={{ color: C.purple }}>{p.window}</div>
+          <div className="text-[10px] font-mono" style={{ color: C.textLo }}>Time to Breakdown</div>
+        </div>
+        <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-[10px] font-mono uppercase" style={{ color: C.textLo }}>Anomaly Score</div>
+          <div className="text-2xl font-bold font-mono" style={{ color: C.amber }}>{p.anomalyScore}</div>
+          <div className="text-[10px] font-mono" style={{ color: C.textLo }}>Normalized (0.0 - 1.0)</div>
+        </div>
+        <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-[10px] font-mono uppercase" style={{ color: C.textLo }}>Risk Level</div>
+          <div className="text-2xl font-bold font-mono" style={{ color: C.red }}>{p.riskLevel}</div>
+          <div className="text-[10px] font-mono" style={{ color: C.red }}>ACTION SUGGESTED</div>
+        </div>
+      </div>
+
+      <div className="rounded-lg p-3 flex items-start gap-2 text-xs font-mono" style={{ background: "rgba(240,169,62,0.1)", border: `1px solid ${C.amber}44`, color: C.textHi }}>
+        <AlertTriangle size={15} color={C.amber} className="mt-0.5 shrink-0" />
+        <div>
+          <span style={{ color: C.amber, fontWeight: 700 }}>TELEMETRY ANOMALY DETECTED ({scenario.targetId}):</span> {p.telemetryNotice}
+        </div>
+      </div>
+    </Panel>
   );
 }
 
-/* ============================ dependency graph ============================ */
+/* ==================== DEPENDENCY & PROPAGATION GRAPH ===================== */
 
 function NodeBox({ x, y, w, h, status, label, sub, Icon, live }) {
-  const s = STATUS_STYLE[status];
+  const s = STATUS_STYLE[status] || STATUS_STYLE.ok;
   return (
     <g transform={`translate(${x - w / 2}, ${y - h / 2})`} style={{ transition: "all .5s ease" }}>
       <rect width={w} height={h} rx={10} fill={s.fill} stroke={s.stroke} strokeWidth={1.4}
@@ -624,7 +702,7 @@ function NodeBox({ x, y, w, h, status, label, sub, Icon, live }) {
 }
 
 function EdgePath({ x1, y1, x2, y2, status, dashed }) {
-  const s = STATUS_STYLE[status];
+  const s = STATUS_STYLE[status] || STATUS_STYLE.ok;
   const midY = (y1 + y2) / 2;
   const d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
   const live = status !== "ok";
@@ -636,40 +714,52 @@ function EdgePath({ x1, y1, x2, y2, status, dashed }) {
   );
 }
 
-function DependencyGraphPanel({ phase }) {
-  const failed = isPostFailure(phase);
+function DependencyGraphPanel({ scenario, phase }) {
+  const failed = ["failed", "plans", "executing", "stabilized"].includes(phase);
   const stabilized = phase === "stabilized";
 
-  const nodeStatus = {
-    sat: Object.fromEntries(SATELLITES.map((s) => [s.id, satStatus(s.id, phase)])),
-    link: Object.fromEntries(LINKS.map((l) => [l.id, linkStatus(l.id, phase)])),
-    gs: Object.fromEntries(GROUND.map((g) => [g.id, gsStatus(g.id, phase)])),
-    task: Object.fromEntries(TASKS.map((t) => [t.id, taskStatus(t.id, phase)])),
-  };
+  const nodeMap = stabilized ? scenario.graphRecoveredNodes : scenario.graphNodes;
+  const activeNodes = failed ? nodeMap : { sats: {}, links: {}, gs: {}, tasks: {} };
+
+  const getStatus = (cat, id) => activeNodes[cat]?.[id] || "ok";
 
   return (
     <Panel className="fade-in overflow-hidden">
       <SectionLabel
-        eyebrow="MISSION DEPENDENCY GRAPH"
-        title="Satellites → Comm Links → Ground Stations → Mission Tasks"
+        eyebrow="PILLAR 1: FAILURE PROPAGATION — 'How far will the failure spread?'"
+        title="Mission Dependency & Failure Cascade Network"
         right={
           <div className="flex items-center gap-3 text-[10.5px] font-mono flex-wrap">
-            <LegendDot color={C.cyan} label="Nominal" />
-            <LegendDot color={C.amber} label="Impacted" />
-            <LegendDot color={C.red} label="Failed" />
-            <LegendDot color={C.purple} label="Recovered / Rerouted" />
+            <LegendDot color={C.red} label="Failed Node" />
+            <LegendDot color={C.amber} label="Direct / Indirect Impact" />
+            <LegendDot color={C.red} label="Critical Task at Risk" />
+            <LegendDot color={C.cyan} label="Safe / Unaffected" />
+            <LegendDot color={C.purple} label="Recovered / Alternate Path" />
           </div>
         }
       />
 
       {failed && (
         <div className="mb-4 flex items-center gap-2 text-xs font-mono flex-wrap" style={{ color: C.textMid }}>
-          <span className="px-2 py-1 rounded" style={{ background: "rgba(241,76,90,0.15)", color: C.red }}>C03 FAILED</span>
+          <span className="px-2 py-1 rounded font-bold" style={{ background: "rgba(241,76,90,0.15)", color: C.red }}>
+            FAILED: {scenario.impact.failedNode}
+          </span>
           <ArrowRight size={12} />
-          <span className="px-2 py-1 rounded" style={{ background: "rgba(240,169,62,0.15)", color: C.amber }}>SAT-02 / GS-01 DEPENDENCY IMPACT</span>
+          <span className="px-2 py-1 rounded" style={{ background: "rgba(240,169,62,0.15)", color: C.amber }}>
+            DIRECT: {scenario.impact.directNodes.join(", ")}
+          </span>
           <ArrowRight size={12} />
-          <span className="px-2 py-1 rounded" style={{ background: "rgba(240,169,62,0.15)", color: C.amber }}>T07 / T11 / T14 AT RISK</span>
-          {stabilized && (<><ArrowRight size={12} /><span className="px-2 py-1 rounded" style={{ background: "rgba(177,140,255,0.18)", color: C.purple }}>ALTERNATE PATH ACTIVE</span></>)}
+          <span className="px-2 py-1 rounded" style={{ background: "rgba(240,169,62,0.15)", color: C.amber }}>
+            INDIRECT: {scenario.impact.indirectNodes.join(", ")}
+          </span>
+          {stabilized && (
+            <>
+              <ArrowRight size={12} />
+              <span className="px-2 py-1 rounded font-bold" style={{ background: "rgba(177,140,255,0.18)", color: C.purple }}>
+                BACKUP ACTIVE ({scenario.backup.backup.split("&")[0]})
+              </span>
+            </>
+          )}
         </div>
       )}
 
@@ -682,17 +772,17 @@ function DependencyGraphPanel({ phase }) {
           </defs>
           <rect width="1160" height="520" fill="url(#dotgrid)" />
 
-          {/* row labels */}
+          {/* Row Headers */}
           <text x="16" y={Y_SAT - 26} fontSize="10" fontFamily="ui-monospace, monospace" fill={C.textLo} letterSpacing="2">SATELLITES</text>
           <text x="16" y={Y_LINK - 26} fontSize="10" fontFamily="ui-monospace, monospace" fill={C.textLo} letterSpacing="2">COMM. LINKS</text>
           <text x="16" y={Y_GS - 26} fontSize="10" fontFamily="ui-monospace, monospace" fill={C.textLo} letterSpacing="2">GROUND STATIONS</text>
           <text x="16" y={Y_TASK - 26} fontSize="10" fontFamily="ui-monospace, monospace" fill={C.textLo} letterSpacing="2">MISSION TASKS</text>
 
-          {/* edges: sat -> link -> gs */}
+          {/* Edges */}
           {LINKS.map((l) => {
             const a = centerOf("sat", l.sat), b = centerOf("link", l.id), c = centerOf("gs", l.gs);
-            const st1 = combine(nodeStatus.sat[l.sat], nodeStatus.link[l.id]);
-            const st2 = combine(nodeStatus.link[l.id], nodeStatus.gs[l.gs]);
+            const st1 = combine(getStatus("sats", l.sat), getStatus("links", l.id));
+            const st2 = combine(getStatus("links", l.id), getStatus("gs", l.gs));
             return (
               <g key={l.id}>
                 <EdgePath x1={a.x} y1={a.y + 20} x2={b.x} y2={b.y - 16} status={st1} />
@@ -701,50 +791,58 @@ function DependencyGraphPanel({ phase }) {
             );
           })}
 
-          {/* edges: gs -> task, sat -> task (direct) */}
           {TASKS.map((t) => {
             const from = t.from.startsWith("SAT") ? centerOf("sat", t.from) : centerOf("gs", t.from);
             const to = centerOf("task", t.id);
-            const fromStatus = t.from.startsWith("SAT") ? nodeStatus.sat[t.from] : nodeStatus.gs[t.from];
-            const st = combine(fromStatus, nodeStatus.task[t.id]);
-            return <EdgePath key={"e" + t.id} x1={from.x} y1={from.y + (t.from.startsWith("SAT") ? 20 : 20)} x2={to.x} y2={to.y - 15} status={st} dashed={t.from.startsWith("SAT")} />;
+            const fromStatus = t.from.startsWith("SAT") ? getStatus("sats", t.from) : getStatus("gs", t.from);
+            const st = combine(fromStatus, getStatus("tasks", t.id));
+            return <EdgePath key={"e" + t.id} x1={from.x} y1={from.y + 20} x2={to.x} y2={to.y - 15} status={st} dashed={t.from.startsWith("SAT")} />;
           })}
 
-          {/* reroute path — only visible once stabilized */}
-          {stabilized && (
-            <EdgePath x1={centerOf("sat", "SAT-02").x} y1={centerOf("sat", "SAT-02").y + 20}
-              x2={centerOf("gs", "GS-01").x} y2={centerOf("gs", "GS-01").y - 20}
-              status="recovered" />
-          )}
-          {stabilized && (
-            <text x={(centerOf("sat", "SAT-02").x + centerOf("gs", "GS-01").x) / 2} y={(Y_SAT + Y_GS) / 2 - 4}
-              fontSize="9" fontFamily="ui-monospace, monospace" fill={C.purple} textAnchor="middle">ALT ROUTE VIA C06</text>
-          )}
-
-          {/* failure ripple */}
-          {failed && !stabilized && (
-            <g key={phase}>
-              <circle cx={centerOf("link", "C03").x} cy={centerOf("link", "C03").y} r={8} fill="none" stroke={C.red} strokeWidth="2"
-                style={{ animation: "ripple 1.8s ease-out infinite" }} />
+          {/* Scenario Specific Backup Reroute Lines when Stabilized */}
+          {stabilized && scenario.id === "comm" && (
+            <g>
+              <EdgePath x1={centerOf("sat", "SAT-02").x} y1={centerOf("sat", "SAT-02").y + 20}
+                x2={centerOf("gs", "GS-01").x} y2={centerOf("gs", "GS-01").y - 20} status="recovered" />
+              <text x={(centerOf("sat", "SAT-02").x + centerOf("gs", "GS-01").x) / 2} y={(Y_SAT + Y_GS) / 2 - 4}
+                fontSize="9" fontFamily="ui-monospace, monospace" fill={C.purple} textAnchor="middle">ALT ROUTE VIA C06</text>
             </g>
           )}
 
-          {/* nodes */}
+          {stabilized && scenario.id === "power" && (
+            <g>
+              <EdgePath x1={centerOf("sat", "SAT-03").x} y1={centerOf("sat", "SAT-03").y + 20}
+                x2={centerOf("sat", "SAT-02").x} y2={centerOf("sat", "SAT-02").y + 20} status="recovered" />
+              <text x={(centerOf("sat", "SAT-03").x + centerOf("sat", "SAT-02").x) / 2} y={Y_SAT + 32}
+                fontSize="9" fontFamily="ui-monospace, monospace" fill={C.purple} textAnchor="middle">BATTERY & POWER TRANSFER</text>
+            </g>
+          )}
+
+          {stabilized && scenario.id === "obc" && (
+            <g>
+              <EdgePath x1={centerOf("sat", "SAT-01").x} y1={centerOf("sat", "SAT-01").y + 20}
+                x2={centerOf("sat", "SAT-03").x} y2={centerOf("sat", "SAT-03").y + 20} status="recovered" />
+              <text x={(centerOf("sat", "SAT-01").x + centerOf("sat", "SAT-03").x) / 2} y={Y_SAT + 32}
+                fontSize="9" fontFamily="ui-monospace, monospace" fill={C.purple} textAnchor="middle">CORE B & COMPUTE MIGRATION</text>
+            </g>
+          )}
+
+          {/* Nodes */}
           {SATELLITES.map((s) => (
-            <NodeBox key={s.id} x={s.x} y={Y_SAT} w={96} h={44} status={nodeStatus.sat[s.id]} label={s.id} Icon={Satellite}
-              live={nodeStatus.sat[s.id] !== "ok"} />
+            <NodeBox key={s.id} x={s.x} y={Y_SAT} w={96} h={44} status={getStatus("sats", s.id)} label={s.id} Icon={Satellite}
+              live={getStatus("sats", s.id) !== "ok"} />
           ))}
           {LINKS.map((l) => (
-            <NodeBox key={l.id} x={l.x} y={Y_LINK} w={62} h={34} status={nodeStatus.link[l.id]} label={l.id}
-              live={nodeStatus.link[l.id] !== "ok"} />
+            <NodeBox key={l.id} x={l.x} y={Y_LINK} w={62} h={34} status={getStatus("links", l.id)} label={l.id}
+              live={getStatus("links", l.id) !== "ok"} />
           ))}
           {GROUND.map((g) => (
-            <NodeBox key={g.id} x={g.x} y={Y_GS} w={96} h={44} status={nodeStatus.gs[g.id]} label={g.id} Icon={TowerControl}
-              live={nodeStatus.gs[g.id] !== "ok"} />
+            <NodeBox key={g.id} x={g.x} y={Y_GS} w={96} h={44} status={getStatus("gs", g.id)} label={g.id} Icon={TowerControl}
+              live={getStatus("gs", g.id) !== "ok"} />
           ))}
           {TASKS.map((t) => (
-            <NodeBox key={t.id} x={t.x} y={Y_TASK} w={58} h={30} status={nodeStatus.task[t.id]} label={t.id}
-              live={nodeStatus.task[t.id] === "critical"} />
+            <NodeBox key={t.id} x={t.x} y={Y_TASK} w={58} h={30} status={getStatus("tasks", t.id)} label={t.id}
+              live={getStatus("tasks", t.id) === "critical"} />
           ))}
         </svg>
       </div>
@@ -760,46 +858,23 @@ function LegendDot({ color, label }) {
   );
 }
 
-/* ============================ propagation panel ============================ */
+/* ============================ IMPACT ANALYSIS PANEL ============================ */
 
-function PropagationPanel({ phase, health }) {
+function ImpactAnalysisPanel({ scenario, phase, health }) {
   const stabilized = phase === "stabilized";
+  const imp = scenario.impact;
   return (
-    <Panel className="fade-in lg:col-span-1">
-      <div className="flex items-center gap-2 mb-3">
-        <AlertTriangle size={15} color={C.amber} />
-        <span className="text-xs font-mono tracking-widest" style={{ color: C.amber }}>FAILURE DETECTED</span>
-      </div>
-      <div className="text-sm font-semibold mb-4" style={{ color: C.textHi }}>C03 Communication Link</div>
-
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <MiniStat label="Direct Impact" value="2" unit="components" />
-        <MiniStat label="Indirect Impact" value="5" unit="components" />
-        <MiniStat label="Tasks at Risk" value="6" unit="mission tasks" color={C.amber} />
-        <MiniStat label="Critical at Risk" value="2" unit="critical tasks" color={C.red} />
+    <Panel className="fade-in">
+      <SectionLabel eyebrow="IMPACT PROPAGATION SUMMARY" title={`Failure Propagation Breakdown — ${scenario.targetComponent}`} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <MiniStat label="Directly Affected" value={imp.directImpactCount} unit="components" color={C.amber} />
+        <MiniStat label="Indirectly Affected" value={imp.indirectImpactCount} unit="components" color={C.amber} />
+        <MiniStat label="Critical Tasks at Risk" value={imp.criticalTasksAtRiskCount} unit="critical tasks" color={C.red} />
+        <MiniStat label="Mission Value at Risk" value={`${imp.missionValueAtRisk}%`} unit="capacity drop" color={C.red} />
       </div>
 
-      <div className="text-[10.5px] font-mono mb-2 flex items-center justify-between" style={{ color: C.textLo }}>
-        <span>MISSION HEALTH</span>
-        <span style={{ color: stabilized ? C.green : C.red }}>
-          100% → 58%{stabilized ? " → 94%" : ""}
-        </span>
-      </div>
-      <div style={{ height: 90 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={health}>
-            <defs>
-              <linearGradient id="healthFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={C.cyan} stopOpacity={0.5} />
-                <stop offset="100%" stopColor={C.cyan} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="t" tick={{ fontSize: 9, fill: C.textLo }} axisLine={{ stroke: C.hairline }} tickLine={false} />
-            <YAxis hide domain={[0, 100]} />
-            <Tooltip contentStyle={{ background: C.bgPanelSolid, border: `1px solid ${C.hairline}`, fontSize: 11 }} labelStyle={{ color: C.textMid }} />
-            <Area type="monotone" dataKey="v" stroke={C.cyan} strokeWidth={2} fill="url(#healthFill)" isAnimationActive />
-          </AreaChart>
-        </ResponsiveContainer>
+      <div className="rounded-lg p-3 text-xs font-mono" style={{ background: "rgba(241,76,90,0.08)", border: `1px solid ${C.red}44`, color: C.textHi }}>
+        <span style={{ color: C.red, fontWeight: 700 }}>ORBIT-R PROPAGATION ENGINE:</span> Identified local fault on {scenario.targetId} cascading into {imp.directImpactCount + imp.indirectImpactCount} components with {imp.missionValueAtRisk}% mission capability at risk.
       </div>
     </Panel>
   );
@@ -807,120 +882,148 @@ function PropagationPanel({ phase, health }) {
 
 function MiniStat({ label, value, unit, color = C.textHi }) {
   return (
-    <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
-      <div className="text-[9.5px] font-mono uppercase tracking-wider" style={{ color: C.textLo }}>{label}</div>
-      <div className="text-lg font-bold font-mono" style={{ color }}>{value}</div>
-      <div className="text-[9.5px]" style={{ color: C.textLo }}>{unit}</div>
+    <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+      <div className="text-[10px] font-mono uppercase tracking-wider" style={{ color: C.textLo }}>{label}</div>
+      <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
+      <div className="text-[10px]" style={{ color: C.textLo }}>{unit}</div>
     </div>
   );
 }
 
-/* ============================ criticality panel ============================ */
+/* ======================= RESOURCE UTILIZATION ANALYSIS ====================== */
 
-function CriticalityPanel() {
-  const max = CRITICALITY_ROWS[0].score;
+function ResourceUtilizationPanel({ scenario }) {
+  const r = scenario.resources;
+
+  const chartData = [
+    { key: "Bandwidth", before: r.before.bandwidth, during: r.during.bandwidth, after: r.after.bandwidth },
+    { key: "Computing", before: r.before.compute, during: r.during.compute, after: r.after.compute },
+    { key: "Power", before: r.before.power, during: r.during.power, after: r.after.power },
+    { key: "Ground", before: r.before.ground, during: r.during.ground, after: r.after.ground },
+    { key: "Satellite", before: r.before.satellite, during: r.during.satellite, after: r.after.satellite },
+  ];
+
   return (
-    <Panel className="fade-in lg:col-span-1">
-      <div className="flex items-center gap-2 mb-1">
-        <Layers size={15} color={C.purple} />
-        <span className="text-xs font-mono tracking-widest" style={{ color: C.purple }}>COMPONENT CRITICALITY</span>
+    <Panel className="fade-in">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Gauge size={15} color={C.cyan} />
+          <span className="text-xs font-mono tracking-widest font-semibold" style={{ color: C.cyan }}>RESOURCE ALLOCATION ANALYSIS</span>
+        </div>
+        <div className="text-[10px] font-mono" style={{ color: C.textLo }}>Before / During / After</div>
       </div>
-      <div className="flex items-center gap-1 mb-4 group relative">
-        <Info size={11} color={C.textLo} />
-        <span className="text-[10.5px]" style={{ color: C.textLo }}>Higher = greater mission impact if unavailable</span>
-      </div>
-      <div className="space-y-3">
-        {CRITICALITY_ROWS.map((r) => (
-          <div key={r.id}>
-            <div className="flex justify-between text-xs font-mono mb-1">
-              <span style={{ color: C.textHi }}>{r.id}</span>
-              <span style={{ color: C.textMid }}>{r.score.toFixed(2)}</span>
-            </div>
-            <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-              <div className="h-full rounded-full" style={{
-                width: `${(r.score / max) * 100}%`,
-                background: r.id === "C03" ? C.red : r.id === "SAT-02" || r.id === "GS-01" ? C.amber : C.cyan,
-                transition: "width 1s ease",
-              }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </Panel>
-  );
-}
 
-/* ============================ resource panel ============================ */
-
-function ResourcePanel() {
-  return (
-    <Panel className="fade-in lg:col-span-1">
-      <div className="flex items-center gap-2 mb-4">
-        <Gauge size={15} color={C.cyan} />
-        <span className="text-xs font-mono tracking-widest" style={{ color: C.cyan }}>SURVIVING RESOURCES</span>
-      </div>
-      <div style={{ height: 130 }}>
+      <div style={{ height: 140 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={RESOURCE_ROWS} margin={{ top: 4, right: 4, left: -22, bottom: 0 }}>
+          <BarChart data={chartData} margin={{ top: 4, right: 4, left: -22, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke={C.hairline} />
-            <XAxis dataKey="key" tick={{ fontSize: 8.5, fill: C.textLo }} axisLine={{ stroke: C.hairline }} tickLine={false} interval={0}
-              tickFormatter={(v) => v.split(" ")[0]} />
+            <XAxis dataKey="key" tick={{ fontSize: 8.5, fill: C.textLo }} axisLine={{ stroke: C.hairline }} tickLine={false} />
             <YAxis tick={{ fontSize: 9, fill: C.textLo }} axisLine={false} tickLine={false} domain={[0, 100]} />
             <Tooltip contentStyle={{ background: C.bgPanelSolid, border: `1px solid ${C.hairline}`, fontSize: 11 }} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-              {RESOURCE_ROWS.map((r, i) => (
-                <Cell key={i} fill={r.value < 60 ? C.red : r.value < 75 ? C.amber : C.cyan} />
-              ))}
-            </Bar>
+            <Bar dataKey="before" fill={C.cyan} name="Before" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="during" fill={C.red} name="During" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="after" fill={C.green} name="After" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-3 flex items-start gap-2 rounded-lg p-2.5" style={{ background: "rgba(240,169,62,0.08)", border: `1px solid rgba(240,169,62,0.28)` }}>
-        <AlertTriangle size={13} color={C.amber} className="mt-0.5 shrink-0" />
+
+      <div className="mt-3 flex items-start gap-2 rounded-lg p-2.5" style={{ background: "rgba(57,199,240,0.08)", border: `1px solid rgba(57,199,240,0.28)` }}>
+        <Info size={13} color={C.cyan} className="mt-0.5 shrink-0" />
         <div className="text-[11px]" style={{ color: C.textMid }}>
-          <span style={{ color: C.amber, fontWeight: 700 }}>GS-01 utilization: 92%</span> — near capacity. Full rerouting through this station alone isn't feasible.
+          Overall resource availability: <span style={{ color: C.cyan, fontWeight: 700 }}>{r.before.overall}% → {r.during.overall}% → {r.after.overall}%</span>. Surviving capacity re-allocated.
         </div>
       </div>
     </Panel>
   );
 }
 
-/* ============================ recovery optimizer ============================ */
+/* ====================== BACKUP & REDUNDANCY ANALYSIS ======================= */
 
-function RecoveryOptimizer({ phase, onGenerate, onExecute }) {
+function BackupRedundancyPanel({ scenario }) {
+  const b = scenario.backup;
+  return (
+    <Panel className="fade-in">
+      <div className="flex items-center gap-2 mb-4">
+        <Layers size={15} color={C.purple} />
+        <span className="text-xs font-mono tracking-widest font-semibold" style={{ color: C.purple }}>BACKUP & REDUNDANCY RELATIONSHIPS</span>
+      </div>
+
+      <div className="rounded-xl p-3 mb-3" style={{ background: "rgba(177,140,255,0.08)", border: `1px solid rgba(177,140,255,0.25)` }}>
+        <div className="text-[10px] font-mono" style={{ color: C.textLo }}>PRIMARY → BACKUP PAIR</div>
+        <div className="text-xs font-bold font-mono mt-1" style={{ color: C.textHi }}>{b.primary}</div>
+        <div className="text-xs font-bold font-mono" style={{ color: C.purple }}>↓ {b.backup}</div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-[9.5px] font-mono uppercase" style={{ color: C.textLo }}>Backup Readiness</div>
+          <div className="text-lg font-bold font-mono" style={{ color: C.green }}>{b.readiness}%</div>
+        </div>
+        <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-[9.5px] font-mono uppercase" style={{ color: C.textLo }}>Backup Success Rate</div>
+          <div className="text-lg font-bold font-mono" style={{ color: C.cyan }}>{b.successRate}%</div>
+        </div>
+        <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-[9.5px] font-mono uppercase" style={{ color: C.textLo }}>Switchover Time</div>
+          <div className="text-lg font-bold font-mono" style={{ color: C.purple }}>{b.switchoverTime}</div>
+        </div>
+        <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-[9.5px] font-mono uppercase" style={{ color: C.textLo }}>Backup Capacity</div>
+          <div className="text-lg font-bold font-mono" style={{ color: C.textHi }}>{b.capacity}%</div>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+/* ============================ RECOVERY OPTIMIZER ============================ */
+
+function RecoveryOptimizer({ scenario, phase, onGenerate, onExecute }) {
   const plansReady = phase !== "failed";
   return (
     <Panel className="fade-in">
       <div className="flex items-center gap-2 mb-1">
         <Sparkles size={15} color={C.purple} />
-        <span className="text-xs font-mono tracking-widest" style={{ color: C.purple }}>ORBIT-R DECISION ENGINE</span>
+        <span className="text-xs font-mono tracking-widest font-semibold" style={{ color: C.purple }}>
+          PILLAR 2: RECOVERY OPTIMIZATION — "What is the best way to keep the mission running?"
+        </span>
       </div>
       <SectionLabel
         eyebrow=""
-        title="Recovery Optimizer"
+        title="Recovery Strategy Decision Engine"
         right={!plansReady ? (
-          <button onClick={onGenerate} className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:brightness-110"
+          <button onClick={onGenerate} className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl transition hover:brightness-110"
             style={{ background: `linear-gradient(135deg, ${C.purple}, #8B5FE8)`, color: "#0b0716" }}>
-            <Sparkles size={16} /> Generate Recovery Plans
+            <Sparkles size={15} /> Generate Recovery Plans
           </button>
         ) : phase === "plans" ? (
-          <button onClick={onExecute} className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:brightness-110"
+          <button onClick={onExecute} className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl transition hover:brightness-110"
             style={{ background: `linear-gradient(135deg, ${C.green}, #1EAF77)`, color: "#04140C" }}>
-            <CheckCircle2 size={16} /> Execute Best Plan
+            <CheckCircle2 size={15} /> Execute Best Plan
           </button>
         ) : null}
       />
 
+      {/* Optimization Score Weights Bar */}
+      <div className="mb-4 p-3 rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs font-mono"
+        style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+        <span style={{ color: C.textLo }}>WEIGHTED CONSTRAINT SCORE FORMULA:</span>
+        <span style={{ color: C.purple }}>Mission Value (40%)</span>
+        <span style={{ color: C.cyan }}>Resource Efficiency (25%)</span>
+        <span style={{ color: C.amber }}>Recovery Time (20%)</span>
+        <span style={{ color: C.green }}>Operational Risk (15%)</span>
+      </div>
+
       {!plansReady && (
         <div className="text-sm py-6 text-center" style={{ color: C.textLo }}>
-          Awaiting operator command — generate feasible recovery alternatives from surviving resources.
+          Awaiting operator command — generate feasible recovery alternatives from surviving satellite & ground resources.
         </div>
       )}
 
       {plansReady && (
         <div className="grid md:grid-cols-3 gap-4 mt-2">
-          {PLANS.map((p) => (
-            <div key={p.key} className="relative rounded-xl p-4 fade-in" style={{
+          {scenario.plans.map((p) => (
+            <div key={p.key} className="relative rounded-xl p-4 fade-in flex flex-col justify-between" style={{
               background: p.best ? "rgba(177,140,255,0.08)" : "rgba(255,255,255,0.02)",
               border: `1.5px solid ${p.best ? C.purple : C.hairline}`,
               boxShadow: p.best ? `0 0 26px rgba(177,140,255,0.25)` : "none",
@@ -928,24 +1031,28 @@ function RecoveryOptimizer({ phase, onGenerate, onExecute }) {
               {p.best && (
                 <div className="absolute -top-3 left-4 flex items-center gap-1 text-[10.5px] font-bold px-2.5 py-1 rounded-full"
                   style={{ background: C.purple, color: "#0b0716" }}>
-                  <Star size={11} fill="#0b0716" /> BEST FEASIBLE PLAN
+                  <Star size={11} fill="#0b0716" /> RECOMMENDED PLAN
                 </div>
               )}
-              <div className="text-[10px] font-mono tracking-wider mt-1" style={{ color: C.textLo }}>PLAN {p.key}</div>
-              <div className="text-sm font-bold mb-3" style={{ color: C.textHi }}>{p.name}</div>
-              <div className="space-y-1.5 text-xs font-mono">
-                <Row k="Mission value retained" v={`${p.value}%`} color={p.best ? C.purple : C.textHi} />
-                <Row k="Critical tasks recovered" v={p.critRecovered} />
-                <Row k="Risk" v={p.risk} />
-                <Row k="Resource cost" v={p.cost} />
-                <Row k="Recovery time" v={p.time} />
-                <Row k="Score" v={p.score} color={p.best ? C.purple : C.textHi} bold />
+              <div>
+                <div className="text-[10px] font-mono tracking-wider mt-1" style={{ color: C.textLo }}>PLAN {p.key}</div>
+                <div className="text-sm font-bold mb-3" style={{ color: C.textHi }}>{p.name}</div>
+                <div className="space-y-1.5 text-xs font-mono">
+                  <Row k="Mission value retained" v={`${p.value}%`} color={p.best ? C.purple : C.textHi} />
+                  <Row k="Critical tasks recovered" v={p.critRecovered} />
+                  <Row k="Operational Risk" v={p.risk} />
+                  <Row k="Resource Cost" v={p.cost} />
+                  <Row k="Recovery Time" v={p.time} />
+                  <Row k="Optimization Score" v={p.score} color={p.best ? C.purple : C.textHi} bold />
+                </div>
               </div>
-              {p.best && (
+
+              {p.best && p.whyRationale && (
                 <div className="mt-3 pt-3 space-y-1" style={{ borderTop: `1px solid rgba(177,140,255,0.25)` }}>
-                  {["Highest mission value retained", "All critical tasks recovered", "Satisfies resource constraints", "Acceptable recovery time", "Low operational risk"].map((r) => (
-                    <div key={r} className="flex items-center gap-1.5 text-[11px]" style={{ color: C.textMid }}>
-                      <CheckCircle2 size={11} color={C.purple} /> {r}
+                  <div className="text-[10px] font-mono font-bold uppercase mb-1" style={{ color: C.purple }}>WHY THIS PLAN?</div>
+                  {p.whyRationale.map((r) => (
+                    <div key={r} className="flex items-start gap-1.5 text-[11px]" style={{ color: C.textMid }}>
+                      <CheckCircle2 size={11} color={C.purple} className="mt-0.5 shrink-0" /> {r}
                     </div>
                   ))}
                 </div>
@@ -967,98 +1074,294 @@ function Row({ k, v, color = C.textMid, bold }) {
   );
 }
 
-/* ============================ execution timeline ============================ */
+/* ==================== TIMELINE & RECOVERY TIME BREAKDOWN ==================== */
 
-function ExecutionTimeline({ execIdx, phase }) {
+function TimelineAndRecoveryTimePanel({ scenario, execIdx, phase }) {
+  const rt = scenario.recoveryTime;
+  const bestPlan = scenario.plans.find((p) => p.best);
+
   return (
     <Panel className="fade-in">
-      <div className="flex items-center gap-2 mb-4">
-        <Clock size={15} color={C.green} />
-        <span className="text-xs font-mono tracking-widest" style={{ color: C.green }}>EXECUTING — PLAN C: MULTI-RESOURCE REALLOCATION</span>
-      </div>
-      <div className="space-y-2">
-        {EXEC_STEPS.map((s, i) => {
-          const done = i <= execIdx || phase === "stabilized";
-          const active = i === execIdx && phase === "executing";
-          return (
-            <div key={s} className="flex items-center gap-3 px-3 py-2 rounded-lg" style={{
-              background: active ? "rgba(56,217,147,0.08)" : "transparent",
-              transition: "all .4s ease",
-            }}>
-              {done ? <CheckCircle2 size={16} color={C.green} /> : <span className="w-4 h-4 rounded-full inline-block" style={{ border: `1.5px solid ${C.hairline}` }} />}
-              <span className="text-sm font-mono" style={{ color: done ? C.textHi : C.textLo }}>{s}</span>
-              {active && <RefreshCw size={12} color={C.green} className="ml-auto animate-spin" />}
+      <SectionLabel eyebrow="RECOVERY TIMELINE & EXECUTION" title={`Total Recovery Time: ${rt.total} min`} />
+
+      <div className="grid lg:grid-cols-3 gap-5 mb-5">
+        {/* Component times breakdown */}
+        <div className="lg:col-span-1 rounded-xl p-4 flex flex-col justify-between" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-xs font-mono font-semibold mb-2" style={{ color: C.green }}>RECOVERY TIME BREAKDOWN</div>
+          <div className="space-y-2 text-xs font-mono">
+            <Row k="Detection" v={`${rt.detection} min`} />
+            <Row k="Impact Analysis" v={`${rt.impactAnalysis} min`} />
+            <Row k="Optimization" v={`${rt.optimization} min`} />
+            <Row k="Backup Activation" v={`${rt.backupActivation} min`} />
+            <Row k="Stabilization" v={`${rt.stabilization} min`} />
+            <div className="pt-2 flex justify-between font-bold" style={{ borderTop: `1px solid ${C.hairline}`, color: C.green }}>
+              <span>Total Recovery Time</span>
+              <span>{rt.total} min</span>
             </div>
-          );
-        })}
+          </div>
+        </div>
+
+        {/* Milestone Timeline */}
+        <div className="lg:col-span-2 rounded-xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-xs font-mono font-semibold mb-3" style={{ color: C.cyan }}>SCENARIO MILESTONE CHRONOLOGY</div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[10px] font-mono">
+            {scenario.timeline.map((tl, i) => (
+              <div key={i} className="p-2 rounded" style={{ background: "rgba(0,0,0,0.25)", border: `1px solid ${C.hairline}` }}>
+                <div className="font-bold" style={{ color: tl.status === "critical" ? C.red : tl.status === "success" ? C.green : C.cyan }}>{tl.time}</div>
+                <div className="truncate font-semibold mt-0.5" style={{ color: C.textHi }}>{tl.title}</div>
+                <div className="text-[9px] mt-1 line-clamp-2" style={{ color: C.textLo }}>{tl.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Execution step progress */}
+      <div className="rounded-xl p-4" style={{ background: "rgba(56,217,147,0.04)", border: `1px solid ${C.green}44` }}>
+        <div className="flex items-center gap-2 mb-3">
+          <Clock size={15} color={C.green} />
+          <span className="text-xs font-mono tracking-widest font-semibold" style={{ color: C.green }}>
+            EXECUTING PLAN {bestPlan.key}: {bestPlan.name.toUpperCase()}
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          {scenario.execSteps.map((s, i) => {
+            const done = i <= execIdx || phase === "stabilized";
+            const active = i === execIdx && phase === "executing";
+            return (
+              <div key={s} className="flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-mono" style={{
+                background: active ? "rgba(56,217,147,0.08)" : "transparent",
+              }}>
+                {done ? <CheckCircle2 size={14} color={C.green} /> : <span className="w-3.5 h-3.5 rounded-full inline-block" style={{ border: `1.5px solid ${C.hairline}` }} />}
+                <span style={{ color: done ? C.textHi : C.textLo }}>{s}</span>
+                {active && <RefreshCw size={11} color={C.green} className="ml-auto animate-spin" />}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </Panel>
   );
 }
 
-/* ============================ stabilized banner ============================ */
+/* ============================ MISSION OUTCOME SUMMARY ============================ */
 
-function StabilizedBanner() {
+function MissionOutcomeSummary({ scenario }) {
+  const b = scenario.backup;
+  const a = scenario.availability;
+  const bestPlan = scenario.plans.find((p) => p.best);
+
   return (
-    <Panel className="fade-in" style={{ border: `1px solid rgba(56,217,147,0.35)`, background: "rgba(56,217,147,0.06)" }}>
-      <div className="flex items-center gap-2 mb-4">
-        <CheckCircle2 size={18} color={C.green} />
-        <span className="text-sm font-mono tracking-widest" style={{ color: C.green }}>MISSION STABILIZED</span>
+    <Panel className="fade-in" style={{ border: `1px solid rgba(56,217,147,0.4)`, background: "rgba(56,217,147,0.06)" }}>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 size={20} color={C.green} />
+          <span className="text-base font-mono tracking-widest font-bold" style={{ color: C.green }}>
+            PILLAR 3: RECOVERY MEASUREMENT — MISSION STABILIZED
+          </span>
+        </div>
+        <span className="text-xs font-mono px-3 py-1 rounded-full font-bold" style={{ background: C.green, color: "#04140C" }}>
+          STATUS: MISSION STABILIZED
+        </span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <BigStat label="Mission Health" trail="100% → 58% →" value={94} suffix="%" color={C.green} />
-        <BigStat label="Active Tasks" trail="15 →" value={22} suffix="" color={C.textHi} />
-        <BigStat label="Critical Tasks" trail="6 →" value={10} suffix="" color={C.textHi} />
-        <BigStat label="Mission Value Retained" trail="" value={94} suffix="%" color={C.purple} />
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
+        <MiniOutcomeStat label="Mission Availability" value={`${a.after}%`} sub={`During: ${a.during}%`} color={C.green} />
+        <MiniOutcomeStat label="Value Retained" value={`${bestPlan.value}%`} sub="Target: >90%" color={C.purple} />
+        <MiniOutcomeStat label="Data Loss" value={`${scenario.dataIntegrity.lossPercentage}%`} sub={`${scenario.dataIntegrity.lostGB} GB`} color={C.amber} />
+        <MiniOutcomeStat label="Recovery Time" value={`${scenario.recoveryTime.total} min`} sub="Target: <20m" color={C.cyan} />
+        <MiniOutcomeStat label="Backup Success" value={`${b.successRate}%`} sub={`Ready: ${b.readiness}%`} color={C.green} />
+        <MiniOutcomeStat label="Resource Avail." value={`${scenario.resources.after.overall}%`} sub={`During: ${scenario.resources.during.overall}%`} color={C.textHi} />
+        <MiniOutcomeStat label="Critical Tasks" value={`${bestPlan.critRecovered}`} sub="100% Preserved" color={C.green} />
+      </div>
+
+      <div className="rounded-xl p-3 text-xs font-mono flex items-center justify-between flex-wrap gap-2" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.hairline}` }}>
+        <span style={{ color: C.textMid }}>CAPABILITY PRESERVATION PROOF:</span>
+        <span style={{ color: C.cyan }}>BEFORE: {a.before}% Availability</span>
+        <span style={{ color: C.red }}>→ DURING: {a.during}%</span>
+        <span style={{ color: C.green, fontWeight: 700 }}>→ AFTER RECOVERY: {a.after}% (+{a.recoveredDelta}%)</span>
       </div>
     </Panel>
   );
 }
 
-function BigStat({ label, trail, value, suffix, color }) {
-  const disp = useCountUp(value, 900);
+function MiniOutcomeStat({ label, value, sub, color }) {
   return (
-    <div>
-      <div className="text-[10.5px] font-mono uppercase tracking-wider mb-1" style={{ color: C.textLo }}>{label}</div>
-      <div className="text-2xl font-bold font-mono" style={{ color }}>
-        {trail && <span className="text-sm mr-1" style={{ color: C.textLo }}>{trail}</span>}
-        {Math.round(disp)}{suffix}
+    <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${C.hairline}` }}>
+      <div className="text-[9.5px] font-mono uppercase" style={{ color: C.textLo }}>{label}</div>
+      <div className="text-lg font-bold font-mono" style={{ color }}>{value}</div>
+      <div className="text-[9.5px] font-mono" style={{ color: C.textLo }}>{sub}</div>
+    </div>
+  );
+}
+
+/* ================= DATA INTEGRITY & MISSION AVAILABILITY ================== */
+
+function DataIntegrityAvailabilityPanel({ scenario }) {
+  const d = scenario.dataIntegrity;
+  const a = scenario.availability;
+
+  return (
+    <Panel className="fade-in">
+      <SectionLabel eyebrow="RECOVERY MEASUREMENT" title="Data Integrity & Mission Availability" />
+      <div className="grid sm:grid-cols-2 gap-5">
+        {/* Data Integrity */}
+        <div className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-xs font-mono font-semibold mb-3 flex items-center justify-between" style={{ color: C.cyan }}>
+            <span>DATA INTEGRITY METRICS</span>
+            <span>DATA LOSS: {d.lossPercentage}%</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+            <div><span style={{ color: C.textLo }}>Generated:</span> <span className="font-bold">{d.generatedGB} GB</span></div>
+            <div><span style={{ color: C.textLo }}>Preserved:</span> <span className="font-bold" style={{ color: C.green }}>{d.preservedGB} GB</span></div>
+            <div><span style={{ color: C.textLo }}>Data Lost:</span> <span className="font-bold" style={{ color: C.red }}>{d.lostGB} GB</span></div>
+            <div><span style={{ color: C.textLo }}>Backup Recovery:</span> <span className="font-bold" style={{ color: C.purple }}>{d.recoveryPercentage}%</span></div>
+          </div>
+          <div className="w-full h-2 rounded-full overflow-hidden mt-3" style={{ background: "rgba(255,255,255,0.06)" }}>
+            <div className="h-full" style={{ width: `${d.recoveryPercentage}%`, background: C.green }} />
+          </div>
+        </div>
+
+        {/* Mission Availability */}
+        <div className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+          <div className="text-xs font-mono font-semibold mb-3 flex items-center justify-between" style={{ color: C.purple }}>
+            <span>MISSION AVAILABILITY</span>
+            <span style={{ color: C.green }}>RECOVERED: +{a.recoveredDelta}%</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center font-mono">
+            <div className="p-2 rounded" style={{ background: "rgba(57,199,240,0.08)" }}>
+              <div className="text-[10px]" style={{ color: C.textLo }}>BEFORE</div>
+              <div className="text-lg font-bold" style={{ color: C.cyan }}>{a.before}%</div>
+            </div>
+            <div className="p-2 rounded" style={{ background: "rgba(241,76,90,0.08)" }}>
+              <div className="text-[10px]" style={{ color: C.textLo }}>DURING</div>
+              <div className="text-lg font-bold" style={{ color: C.red }}>{a.during}%</div>
+            </div>
+            <div className="p-2 rounded" style={{ background: "rgba(56,217,147,0.08)" }}>
+              <div className="text-[10px]" style={{ color: C.textLo }}>AFTER</div>
+              <div className="text-lg font-bold" style={{ color: C.green }}>{a.after}%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+/* ==================== DETECTION METRICS & CONFUSION MATRIX ===================== */
+
+function DetectionMetricsPanel({ scenario }) {
+  const m = scenario.metrics;
+  const cm = m.confusionMatrix;
+
+  return (
+    <Panel className="fade-in">
+      <SectionLabel eyebrow="MODEL EVALUATION" title="Detection & Prediction Performance" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <MetricCard
+          title="Failure Detection Accuracy"
+          value={`${m.detectionAccuracy}%`}
+          formula="Correctly detected failures / Total actual failures × 100"
+          color={C.green}
+        />
+        <MetricCard
+          title="Failure Prediction Accuracy"
+          value={`${m.predictionAccuracy}%`}
+          formula="Correct predictions / Total predictions × 100"
+          color={C.cyan}
+        />
+        <MetricCard
+          title="False Alarm Rate"
+          value={`${m.falseAlarmRate}%`}
+          formula="False alarms / Total alerts × 100"
+          color={C.amber}
+        />
+      </div>
+
+      {/* Visual Confusion Matrix */}
+      <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+        <div className="text-xs font-mono font-semibold mb-2 flex items-center justify-between" style={{ color: C.textHi }}>
+          <span>CONFUSION MATRIX</span>
+          <span className="text-[10px]" style={{ color: C.textLo }}>N = {cm.tp + cm.fp + cm.fn + cm.tn}</span>
+        </div>
+
+        <div className="grid grid-cols-3 text-center text-[10px] font-mono gap-1">
+          <div className="py-1"></div>
+          <div className="py-1 font-bold" style={{ color: C.textLo }}>ACTUAL FAIL</div>
+          <div className="py-1 font-bold" style={{ color: C.textLo }}>ACTUAL NORM</div>
+
+          <div className="py-2 text-right pr-1 font-bold" style={{ color: C.textLo }}>PRED FAIL</div>
+          <div className="py-2 rounded font-bold text-sm" style={{ background: "rgba(56,217,147,0.15)", color: C.green }}>
+            TP: {cm.tp}
+          </div>
+          <div className="py-2 rounded font-bold text-sm" style={{ background: "rgba(240,169,62,0.15)", color: C.amber }}>
+            FP: {cm.fp}
+          </div>
+
+          <div className="py-2 text-right pr-1 font-bold" style={{ color: C.textLo }}>PRED NORM</div>
+          <div className="py-2 rounded font-bold text-sm" style={{ background: "rgba(241,76,90,0.15)", color: C.red }}>
+            FN: {cm.fn}
+          </div>
+          <div className="py-2 rounded font-bold text-sm" style={{ background: "rgba(57,199,240,0.15)", color: C.cyan }}>
+            TN: {cm.tn}
+          </div>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function MetricCard({ title, value, formula, color }) {
+  return (
+    <div className="rounded-xl p-3 flex flex-col justify-between" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.hairline}` }}>
+      <div>
+        <div className="text-[11px] font-mono mb-1" style={{ color: C.textLo }}>{title}</div>
+        <div className="text-2xl font-bold font-mono" style={{ color }}>{value}</div>
+      </div>
+      <div className="mt-2 text-[9.5px] font-mono rounded p-1.5" style={{ background: "rgba(0,0,0,0.3)", color: C.textLo }}>
+        {formula}
       </div>
     </div>
   );
 }
 
-/* ============================ comparison table ============================ */
+/* ========================= SCENARIO COMPARISON MATRIX ========================= */
 
-function ComparisonTable() {
-  const rows = [
-    { k: "Mission Health", before: "100%", failure: "58%", after: "94%" },
-    { k: "Active Tasks", before: "24", failure: "15", after: "22" },
-    { k: "Critical Tasks", before: "10", failure: "6", after: "10" },
-    { k: "Resources", before: "91%", failure: "62%", after: "78%" },
-  ];
+function ScenarioComparisonPanel({ currentId }) {
   return (
     <Panel className="fade-in">
-      <SectionLabel eyebrow="MISSION TIMELINE" title="Before / During / After ORBIT-R" />
+      <SectionLabel eyebrow="MULTI-SCENARIO PROOF" title="Scenario Comparison Matrix" />
       <div className="overflow-x-auto">
-        <table className="w-full text-sm font-mono">
+        <table className="w-full text-xs font-mono text-left">
           <thead>
-            <tr style={{ color: C.textLo }}>
-              <th className="text-left py-2 font-normal text-xs">METRIC</th>
-              <th className="text-right py-2 font-normal text-xs">BEFORE</th>
-              <th className="text-right py-2 font-normal text-xs">FAILURE</th>
-              <th className="text-right py-2 font-normal text-xs" style={{ color: C.purple }}>ORBIT-R RECOVERY</th>
+            <tr style={{ color: C.textLo, borderBottom: `1px solid ${C.hairline}` }}>
+              <th className="py-2">SCENARIO</th>
+              <th className="py-2">TARGET</th>
+              <th className="py-2">IMPACT</th>
+              <th className="py-2">RECOVERY</th>
+              <th className="py-2">DATA LOSS</th>
+              <th className="py-2">AVAILABILITY</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.k} style={{ borderTop: `1px solid ${C.hairline}` }}>
-                <td className="py-2.5" style={{ color: C.textHi }}>{r.k}</td>
-                <td className="py-2.5 text-right" style={{ color: C.textMid }}>{r.before}</td>
-                <td className="py-2.5 text-right" style={{ color: C.red }}>{r.failure}</td>
-                <td className="py-2.5 text-right font-bold" style={{ color: C.green }}>{r.after}</td>
-              </tr>
-            ))}
+            {SCENARIOS.map((sc) => {
+              const active = sc.id === currentId;
+              return (
+                <tr key={sc.id} style={{
+                  borderBottom: `1px solid ${C.hairline}`,
+                  background: active ? "rgba(57,199,240,0.06)" : "transparent",
+                }}>
+                  <td className="py-2.5 font-bold" style={{ color: active ? C.cyan : C.textHi }}>
+                    {sc.shortName} {active && " (Active)"}
+                  </td>
+                  <td className="py-2.5" style={{ color: C.textMid }}>{sc.targetId}</td>
+                  <td className="py-2.5" style={{ color: sc.severity === "CRITICAL" ? C.red : C.amber }}>{sc.severity}</td>
+                  <td className="py-2.5" style={{ color: C.purple }}>{sc.recoveryTime.total} min</td>
+                  <td className="py-2.5" style={{ color: C.amber }}>{sc.dataIntegrity.lossPercentage}%</td>
+                  <td className="py-2.5 font-bold" style={{ color: C.green }}>{sc.availability.after}%</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1066,31 +1369,36 @@ function ComparisonTable() {
   );
 }
 
-/* ============================ mission report ============================ */
+/* ============================ MISSION REPORT PANEL ============================ */
 
-function MissionReportPanel({ onExport }) {
+function MissionReportPanel({ scenario, onExport }) {
+  const bestPlan = scenario.plans.find((p) => p.best);
   const fields = [
-    ["Failure", "C03 Communication Link"],
-    ["Propagation", "7 affected components"],
-    ["Critical Tasks at Risk", "2"],
-    ["Selected Plan", "Multi-Resource Reallocation"],
-    ["Recovery Score", "94.2"],
-    ["Mission Value Retained", "94%"],
+    ["Scenario", scenario.name],
+    ["Target Component", scenario.targetComponent],
+    ["Failure Propagation", `${scenario.impact.directImpactCount + scenario.impact.indirectImpactCount} components affected (${scenario.impact.missionValueAtRisk}% value at risk)`],
+    ["Tasks at Risk", `${scenario.impact.tasksAtRiskCount} (${scenario.impact.criticalTasksAtRiskCount} critical)`],
+    ["Selected Recovery Plan", `Plan ${bestPlan.key} — ${bestPlan.name}`],
+    ["Optimization Score", bestPlan.score],
+    ["Recovery Time", `${scenario.recoveryTime.total} min`],
+    ["Mission Availability", `Before: ${scenario.availability.before}% → After: ${scenario.availability.after}%`],
+    ["Data Loss", `${scenario.dataIntegrity.lossPercentage}% (${scenario.dataIntegrity.lostGB} GB)`],
     ["Outcome", "Mission Stabilized"],
   ];
+
   return (
     <Panel className="fade-in">
       <SectionLabel
-        eyebrow="SUMMARY"
-        title="Mission Report"
+        eyebrow="EXECUTIVE SUMMARY"
+        title="Mission Resilience Report"
         right={
-          <button onClick={onExport} className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:brightness-110"
+          <button onClick={onExport} className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl transition hover:brightness-110"
             style={{ background: `linear-gradient(135deg, ${C.cyan}, ${C.blue})`, color: "#04121C" }}>
-            <Download size={16} /> Export Mission Report
+            <Download size={15} /> Export Mission Report
           </button>
         }
       />
-      <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+      <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-xs">
         {fields.map(([k, v]) => (
           <div key={k} className="flex justify-between py-1.5" style={{ borderBottom: `1px solid ${C.hairline}` }}>
             <span style={{ color: C.textLo }}>{k}</span>
@@ -1098,9 +1406,9 @@ function MissionReportPanel({ onExport }) {
           </div>
         ))}
       </div>
-      <div className="mt-4 flex items-start gap-2 text-[11.5px] rounded-lg p-3" style={{ background: "rgba(255,255,255,0.02)", color: C.textLo }}>
+      <div className="mt-4 flex items-start gap-2 text-[11px] rounded-lg p-3" style={{ background: "rgba(255,255,255,0.02)", color: C.textLo }}>
         <FileText size={13} className="mt-0.5 shrink-0" />
-        C03 remains failed. Mission continuity was restored through surviving resources and alternate routing — not component repair. Labeled ORBIT-R Optimization / Decision Engine; not presented as a live AI model.
+        Component {scenario.targetId} remains degraded/failed. Mission resilience restored via surviving resources, redundant failover paths, and decision optimization. Prototype simulation data.
       </div>
     </Panel>
   );
