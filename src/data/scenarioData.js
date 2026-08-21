@@ -1,6 +1,6 @@
 /* =========================================================================
    ORBIT-R — Scenario Configuration & Centralized Simulation Engine Data
-   SIH 2026 Round 2 — 3 Primary Failure Scenarios
+   3 Primary Operational Failure Scenarios
    ========================================================================= */
 
 export const SCENARIOS = [
